@@ -1457,7 +1457,7 @@ get_values({How, Path}, DataPoint) when How == find orelse How == select ->
               end;
          (_, Acc) -> Acc
       end, [], Entries);
-get_values(Name, DataPoint) when is_list(Name) ->
+get_values(Name, DataPoint) when is_list(Name) orelse is_tuple(Name) ->
     case exometer:get_value(Name, DataPoint) of
         {ok, Values} when is_list(Values) ->
             [{Name, Values}];

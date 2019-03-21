@@ -1442,14 +1442,7 @@ dp_list(95)                  -> [95];
 dp_list(99)                  -> [99];
 dp_list(999)                 -> [999].
 
-get_values(Name, DataPoint) when is_list(Name) ->
-    case exometer:get_value(Name, DataPoint) of
-        {ok, Values} when is_list(Values) ->
-            [{Name, Values}];
-        _ ->
-            []
-    end;
-get_values({How, Path}, DataPoint) ->
+get_values({How, Path}, DataPoint) when How == find orelse How == select ->
     Entries = case How of
                   find   -> exometer:find_entries(Path);
                   select -> exometer:select(Path)
@@ -1463,8 +1456,14 @@ get_values({How, Path}, DataPoint) ->
                       Acc
               end;
          (_, Acc) -> Acc
-      end, [], Entries).
-
+      end, [], Entries);
+get_values(Name, DataPoint) when is_list(Name) ->
+    case exometer:get_value(Name, DataPoint) of
+        {ok, Values} when is_list(Values) ->
+            [{Name, Values}];
+        _ ->
+            []
+    end.
 
 assert_no_duplicates([#reporter{name = R}|T]) ->
     case lists:keymember(R, #reporter.name, T) of

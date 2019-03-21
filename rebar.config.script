@@ -35,8 +35,6 @@ CFG1 = case os:getenv("REBAR_DEPS") of
                lists:keystore(deps_dir, 1, CONFIG0, {deps_dir, Dir})
        end.
 
-Priv = filename:join(filename:dirname(SCRIPT), "priv").
-
 case os:getenv("EXOMETER_CORE_CONFIG_POSTPROCESS") of
     false  -> CFG1;
     []     -> CFG1;

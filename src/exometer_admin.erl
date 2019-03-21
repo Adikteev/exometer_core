@@ -279,18 +279,18 @@ handle_call({new_entry, Name, Type, Opts, AllowExisting} = _Req, _From, S) ->
                 Res = try  exometer:create_entry(E1),
 			   exometer_report:new_entry(E1)
 		      catch
-			  ?EXCEPTION(error, Error1, Stacktrace1) ->
+			  error:Error1 ->
 			      ?log(debug,
 				"ERROR create_entry(~p) :- ~p~n~p",
-				[E1, Error1, ?GET_STACK(Stacktrace1)]),
+				[E1, Error1, erlang:get_stacktrace()]),
 			      erlang:error(Error1)
 		      end,
                 {reply, Res, S}
         end
     catch
-        ?EXCEPTION(error, Error, Stacktrace) ->
+        error:Error ->
 	    ?log(error, "~p -*-> error:~p~n~p~n",
-			[_Req, Error, ?GET_STACK(Stacktrace)]),
+			[_Req, Error, erlang:get_stacktrace()]),
             {reply, {error, Error}, S}
     end;
 handle_call({repair_entry, Name}, _From, S) ->

@@ -94,12 +94,12 @@
 %% generate an error log message by exometer.
 %%
 %%
-%% === exometer_report/5 ===
+%% === exometer_report/4 ===
 %%
 %% The `exometer_report()' function is invoked as follows:
 %%
 %% <pre lang="erlang">
-%%      exometer_report(Metric, DataPoint, Extra, Value, State)</pre>
+%%      exometer_report(Metric, DataPoint, State)</pre>
 %%
 %% The custom plugin will receive this call when a periodic subscription
 %% triggers and wants to report its current value through the plugin.
@@ -110,9 +110,6 @@
 %%
 %% + `DataPoint'<br/>Specifies the data point or data points within the metric
 %%  to be reported.
-%%
-%% + `Extra'<br/>Specifies the extra data, which can be anything the reporter
-%% can understand.
 %%
 %% + `State'<br/>Contains the state returned by the last called plugin function.
 %%
@@ -143,8 +140,6 @@
 %% + `Extra'<br/>Specifies the extra data, which can be anything the reporter
 %% can understand.
 %%
-%% + `Value'<br/>Specifies the value for the datapoint, which is reported.
-%%
 %% + `State'<br/>Contains the state returned by the last called plugin function.
 %%
 %% The `exometer_unsubscribe()' function should return `{ok, State}' where
@@ -166,7 +161,7 @@
 %% That is, e.g. when a `select' pattern is used, all found values are passed
 %% to the reporter in one message. If bulk reporting is not enabled, each
 %% datapoint/value pair will be passed separately to the
-%% <a href="#exometer_report/5"><code>exometer_report/5</code></a> function. If `report_bulk' was enabled, the
+%% <a href="#exometer_report/4"><code>exometer_report/4</code></a> function. If `report_bulk' was enabled, the
 %% reporter callback will get all values at once. Note that this happens
 %% also for single values, which are then passed as a list of one metric,
 %% with a list of one datapoint/value pair.
@@ -281,7 +276,7 @@
           reporter              :: module()     | '_',
           metric                :: metric()     | '_',
           datapoint             :: datapoints() | '_',
-          retry_failed_metrics  :: boolean()    | undefined | '_',
+          retry_failed_metrics  :: boolean()    | '_',
           extra                 :: extra()      | '_'
          }).
 
@@ -307,7 +302,7 @@
 -record(reporter, {
           name      :: atom()                | '_',
           pid       :: pid()                 | atom(), % in select()
-          mref      :: reference()           | undefined | '_',
+          mref      :: reference()           | '_',
           module    :: module()              | '_',
           opts = [] :: [{atom(), any()}]     | '_',
           intervals = [] :: [#interval{}]    | '_',
@@ -380,14 +375,12 @@ subscribe(Reporter, Metric, DataPoint, Interval, Extra, Retry)
                           retry_failed_metrics = Retry,
                           extra = Extra}, Interval}).
 
--dialyzer({no_return, unsubscribe/3}).
 -spec unsubscribe(module(), metric(), datapoint()) ->
                          ok | not_found.
 %% @equiv unsubscribe(Reporter, Metric, DataPoint, [])
 unsubscribe(Reporter, Metric, DataPoint) ->
     unsubscribe(Reporter, Metric, DataPoint, []).
 
--dialyzer({no_return, unsubscribe/4}).
 -spec unsubscribe(module(), metric(), datapoint() | [datapoint()], extra()) ->
                          ok | not_found.
 %% @doc Removes a subscription.
@@ -727,7 +720,6 @@ do_start_reporters(S) ->
     end,
     S#st{}.
 
--spec make_reporter_recs([{atom(), list()}]) -> [#reporter{}].
 make_reporter_recs([{R, Opts}|T]) when is_atom(R), is_list(Opts) ->
     [#reporter{name = R,
                module = get_module(R, Opts),
@@ -1307,7 +1299,7 @@ adjust_interval(Time, T0) ->
             %% Most likely due to clock adjustment
             {Time, T1};
         D ->
-            {Time-D, T0}
+            {D, T0}
     end.
 
 tdiff(T1, T0) ->
@@ -1442,14 +1434,7 @@ dp_list(95)                  -> [95];
 dp_list(99)                  -> [99];
 dp_list(999)                 -> [999].
 
-get_values(Name, DataPoint) when is_list(Name) ->
-    case exometer:get_value(Name, DataPoint) of
-        {ok, Values} when is_list(Values) ->
-            [{Name, Values}];
-        _ ->
-            []
-    end;
-get_values({How, Path}, DataPoint) ->
+get_values({How, Path}, DataPoint) when How == find orelse How == select ->
     Entries = case How of
                   find   -> exometer:find_entries(Path);
                   select -> exometer:select(Path)
@@ -1463,8 +1448,14 @@ get_values({How, Path}, DataPoint) ->
                       Acc
               end;
          (_, Acc) -> Acc
-      end, [], Entries).
-
+      end, [], Entries);
+get_values(Name, DataPoint) when is_list(Name) orelse is_tuple(Name) ->
+    case exometer:get_value(Name, DataPoint) of
+        {ok, Values} when is_list(Values) ->
+            [{Name, Values}];
+        _ ->
+            []
+    end.
 
 assert_no_duplicates([#reporter{name = R}|T]) ->
     case lists:keymember(R, #reporter.name, T) of
@@ -1530,7 +1521,6 @@ maybe_send_after(enabled, Key, Interval) when is_integer(Interval) ->
 maybe_send_after(_, _, _) ->
     undefined.
 
--dialyzer({no_return, unsubscribe_/4}).
 unsubscribe_(Reporter, Metric, DataPoint, Extra) ->
     ?log(info, "unsubscribe_(~p, ~p, ~p, ~p)~n",
           [ Reporter, Metric, DataPoint, Extra]),
@@ -1548,17 +1538,19 @@ unsubscribe_(#subscriber{key = #key{reporter = Reporter,
                                     metric = Metric,
                                     datapoint = DataPoint,
                                     extra = Extra} = Key, t_ref = TRef}) ->
-    try_send(Reporter, {exometer_unsubscribe, Metric, DataPoint, Extra}),
+    try_send(
+      Reporter, {exometer_unsubscribe, Metric, DataPoint, Extra}),
     cancel_timer(TRef),
     ets:delete(?EXOMETER_SUBS, Key),
     ok.
 
+
 report_values(Found, #key{reporter = Reporter, extra = Extra} = Key) ->
     try Reporter ! {exometer_report, Found, Extra}
     catch
-        ?EXCEPTION(error, Reason, Stacktrace) ->
+        error:Reason ->
             ?log(error, "~p~nKey = ~p~nTrace: ~p",
-                        [Reason, Key, ?GET_STACK(Stacktrace)])
+                        [Reason, Key, erlang:get_stacktrace()])
     end.
 
 retrieve_metric({Metric, Type, Enabled}, Acc) ->

@@ -150,7 +150,7 @@ new(Name, Type) ->
 %% the counter value).
 %%
 %% @end
-new(Name, Type, Opts) when is_list(Name), is_list(Opts) ->
+new(Name, Type, Opts) when is_list(Name) orelse is_tuple(Name), is_list(Opts) ->
     exometer_admin:new_entry(Name, Type, Opts).
 
 -spec propose(name(), type(), options()) -> exometer_info:pp() | error().
@@ -211,7 +211,7 @@ update(Name, Value) ->
         _ -> ok
     end.
 
-update_(Name, Value) when is_list(Name) ->
+update_(Name, Value) when is_list(Name) orelse is_tuple(Name) ->
     case ets:lookup(Table = exometer_util:table(), Name) of
         [#exometer_entry{status = Status} = E]
           when ?IS_ENABLED(Status) ->
@@ -301,20 +301,21 @@ fast_incr(0, _, _) ->
 %% @end
 -spec get_value(name()) -> {ok, value()} | {error, not_found}.
 
-get_value(Name) when is_list(Name) ->
+get_value(Name) when is_list(Name) orelse is_tuple(Name) ->
     get_value(Name, default).
 
 -spec get_value(name(), datapoint() | [datapoint()]) ->
                        {ok, value()} | {error, not_found}.
 
-get_value(Name, DataPoint) when is_list(Name), is_integer(DataPoint) ->
+get_value(Name, DataPoint) when is_list(Name) orelse is_tuple(Name),
+  is_integer(DataPoint) ->
     get_value(Name, [DataPoint]);
-get_value(Name, DataPoint) when is_list(Name), is_atom(DataPoint),
-                                DataPoint=/=default ->
+get_value(Name, DataPoint) when is_list(Name) orelse is_tuple(Name),
+  is_atom(DataPoint), DataPoint=/=default ->
     get_value(Name, [DataPoint]);
 
 %% Also covers DataPoints = default
-get_value(Name, DataPoints) when is_list(Name) ->
+get_value(Name, DataPoints) when is_list(Name) orelse is_tuple(Name) ->
     case ets:lookup(exometer_util:table(), Name) of
         [#exometer_entry{} = E] ->
             {ok, get_value_(E, DataPoints)};
